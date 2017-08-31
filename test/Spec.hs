@@ -12,11 +12,17 @@ main = hspec $ do
 
 
 
+shouldParseType :: (Eq a, Show a) => Parser a -> Text -> a -> Expectation
+shouldParseType p t e = t ~> p `shouldParse` e
+
+
 parsingTests = do
     parseExprTest
+    parseInModTest
+    parseModTest
 
 
-parseExprTest = describe "ParseExpr" $ do
+parseExprTest = describe "parseExpr" $ do
     it "parses simple bindings" $ do
         "x = y" `shouldParseText` Binding "x" "y"
         "foo = bar" `shouldParseText` Binding "foo" "bar"
@@ -32,4 +38,38 @@ parseExprTest = describe "ParseExpr" $ do
         "x = 0o101" `shouldParseText` Binding "x" "0o101"
   where
     shouldParseText :: Text -> Expr -> Expectation
-    shouldParseText t e = t ~> parseExpr `shouldParse` e
+    shouldParseText = shouldParseType parseExpr 
+
+
+parseInModTest = describe "parseInModule" $ do
+    it "parses expressions" $ do
+        "x = y" `shouldParseInMod` Expression (Binding "x" "y")
+        "x = 0xFF" `shouldParseInMod` Expression (Binding "x" "0xFF")
+    it "parses basic functions" $ do
+        "def foo, do: x = 3"  `shouldParseInMod` Func "foo" [Binding "x" "3"]
+        "def foo do x = 3 end" `shouldParseInMod` Func "foo" [Binding "x" "3"]
+    it "parses larger functions" $ do
+        "def foo do\nx=3\ny=bar\nend" 
+          `shouldParseInMod` Func "foo" [Binding "x" "3", Binding "y" "bar"]
+  where
+    shouldParseInMod :: Text -> InModule -> Expectation
+    shouldParseInMod = shouldParseType parseInModule
+
+
+parseModTest = describe "parseModule" $ do
+    it "parses empty modules" $ do
+        "defmodule M do end" `shouldParseMod` Module "M" []
+        "defmodule M12, do: " `shouldParseMod` Module "M12" []
+    it "parses simple expressions in modules" $ do
+        "defmodule M, do: x = 3" 
+            `shouldParseMod` Module "M" [Expression (Binding "x" "3")]
+        "defmodule Foo do\nx=3\nfoo=bar\nend"
+            `shouldParseMod` Module "Foo" 
+            (Expression <$> [Binding "x" "3", Binding "foo" "bar"])
+    it "parses functions + expressions" $ do
+        "defmodule Foo do\ndef foo, do: x = 3\ny=3 end"
+            `shouldParseMod` Module "Foo" [Func "foo" [Binding "x" "3"],
+                Expression (Binding "y" "3")]
+  where
+    shouldParseMod :: Text -> Module -> Expectation
+    shouldParseMod = shouldParseType parseModule

@@ -1,10 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Lib
     ( someFunc
+    , Parser
     , Module(..)
     , InModule(..)
     , Expr(..)
     , parseExpr
+    , parseInModule
+    , parseModule
     ) where
 
 import Data.Attoparsec.Text as A
@@ -63,18 +66,26 @@ parseExpr = do
 doBlock :: Parser a -> Parser [a]
 doBlock parser = do
     skipHoriSpace
-    line <|> block
+    line <|> (string "do" *> block [])
   where
     line = do
         char ','
         skipSpace -- new lines are allowed here
         string "do:"
         skipHoriSpace
-        e <- parser
-        pure [e]
-    block = do
-        string "do"
-        untilEnd (skipSpace *> parser)
+        r <- eitherP parser (pure ())
+        case r of
+            Left e -> pure [e]
+            Right _ -> pure []
+    block exprs = do
+        skipSpace
+        x <- eitherP (string "end") parser
+        case x of
+            Left _ -> pure $ Prelude.reverse exprs
+            Right e -> block (e : exprs)
+
+        
+        
 
 parseModule :: Parser Module
 parseModule = do
@@ -88,7 +99,7 @@ parseModule = do
 
 
 parseInModule :: Parser InModule
-parseInModule = (Expression <$> parseExpr)
+parseInModule = func <|> Expression <$> parseExpr
   where
     func = do
       string "def"
