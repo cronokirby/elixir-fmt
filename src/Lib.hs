@@ -11,6 +11,7 @@ import Data.Attoparsec.Text as A
 import Control.Applicative
 import Data.Char
 import Data.Text
+import Data.Functor (($>))
 
 
 someFunc :: IO ()
@@ -52,7 +53,11 @@ parseExpr = do
     y <- identifier <|> number
     pure (Binding x y)
   where
-    number = fst <$> match double
+    number = fst <$> (match $
+      hexLit <|> binLit <|> octLit <|> double $> "")
+    hexLit = string "0x" *> takeWhile1 isHexDigit
+    binLit = string "0b" *> takeWhile1 (\c -> c == '0' || c == '1')
+    octLit = string "0o" *> takeWhile1 isOctDigit
 
 
 doBlock :: Parser a -> Parser [a]
