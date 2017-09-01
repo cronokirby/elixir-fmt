@@ -44,15 +44,12 @@ identifier = do
 skipHoriSpace :: Parser ()
 skipHoriSpace = skipWhile isHorizontalSpace
 
-untilEnd :: Parser a -> Parser [a]
-untilEnd p = manyTill p (string "end")
-
 parseExpr :: Parser Expr
 parseExpr = do
     x <- identifier
-    skipHoriSpace
+    skipSpace
     char '='
-    skipHoriSpace
+    skipSpace
     y <- identifier <|> number
     pure (Binding x y)
   where
@@ -94,7 +91,6 @@ parseModule = do
     skipHoriSpace
     name <- identifier
     inMod <- doBlock parseInModule
-    skipWhile (const True)
     pure (Module name inMod)
 
 
