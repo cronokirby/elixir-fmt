@@ -9,6 +9,7 @@ module Lib
     , parseExpr
     , parseInModule
     , parseModule
+    , parseValue
     ) where
 
 import Data.Attoparsec.Text as A
@@ -27,7 +28,7 @@ data Module
     deriving (Eq, Show)
 
 data InModule
-    = Func Text [Expr]
+    = Func Text [Text] [Expr]
     | Alias [Text] [Text]
     | Expression Expr
     deriving (Eq, Show)
@@ -37,8 +38,9 @@ data Expr
     deriving (Eq, Show)
 
 data Value
-    = Number Text
-    | Identifier Text
+    = Number Text -- We don't care about the number
+    | Identifier Text -- The name of the identifer
+    | FuncAp Text [Value] -- List of arguments
     deriving (Eq, Show)
 
 
@@ -55,6 +57,24 @@ identifier = do
 skipHoriSpace :: Parser ()
 skipHoriSpace = skipWhile isHorizontalSpace
 
+
+parseValue :: Parser Value
+parseValue =  
+    Identifier <$> identifier <|> num <|> funcAp
+  where
+    num = Number . fst <$> match (
+        numLit "0x" isHexDigit <|>
+        numLit "0b" (\c -> c == '0' || c == '1') <|>
+        numLit "0o" isOctDigit <|>
+        double $> ""
+        )
+    numLit s predicate = string s *> takeWhile1 predicate
+    funcAp = do
+        name <- identifier
+        args <- container (char ',') (char '(') (char ')') parseValue
+        pure (FuncAp name args)
+                    
+
 parseExpr :: Parser Expr
 parseExpr = do
     x <- identifier
@@ -64,11 +84,12 @@ parseExpr = do
     y <- Identifier <$> identifier <|> num
     pure (Binding x y)
   where
-    num = Number . fst <$> (match $
-      hexLit <|> binLit <|> octLit <|> double $> "")
-    hexLit = string "0x" *> takeWhile1 isHexDigit
-    binLit = string "0b" *> takeWhile1 (\c -> c == '0' || c == '1')
-    octLit = string "0o" *> takeWhile1 isOctDigit
+    num = Number . fst <$> match (
+      numLit "0x" isHexDigit <|> 
+      numLit "0b" (\c -> c == '0' || c == '1') <|> 
+      numLit "0o" isOctDigit <|> 
+      double $> "")
+    numLit s predicate = string s *> takeWhile1 predicate
 
 
 doBlock :: Parser a -> Parser [a]
@@ -107,11 +128,16 @@ parseInModule :: Parser InModule
 parseInModule = func <|> alias <|> Expression <$> parseExpr
   where
     func = do
-      string "def"
-      skipHoriSpace
-      name <- identifier
-      body <- doBlock parseExpr
-      pure (Func name body)
+        string "def"
+        skipHoriSpace
+        name <- identifier
+        r <- peekChar'
+        let a = case r of
+                '(' -> container (char ',') (char '(') (char ')') identifier
+                _ -> pure []
+        args <- a
+        body <- doBlock parseExpr
+        pure (Func name args body)
     alias = do
         string "alias"
         skipHoriSpace
@@ -150,6 +176,17 @@ parseInModule = func <|> alias <|> Expression <$> parseExpr
                     loop (n : ns)
 
 
+container :: Parser sep -> Parser start -> Parser end -> Parser a -> Parser [a]
+container sep start end p = start *> loop []
+  where
+    loop ns = do
+        skipSpace
+        r <- eitherP end (eitherP sep p)
+        case r of
+            Left _ -> pure (reverse ns)
+            Right (Left _) -> loop ns
+            Right (Right n) -> loop (n : ns)
+                    
 
 
 
